@@ -66,21 +66,32 @@ Fulldata <- Fulldata %>% mutate(condition_left=stimuliFiles[[1]]$condition[Fulld
 # add rank 
 Fulldata <- Fulldata %>% mutate(rank_left=stimuliFiles[[1]]$rank[Fulldata$stim1+1],rank_right=stimuliFiles[[1]]$rank[Fulldata$stim2+1])
 
-Fulldata <- Fulldata %>% mutate(Easy=abs(relative_stim1-relative_stim2))
+
+Fulldata <- Fulldata %>% mutate(Easy=abs(EVStim1-EVStim2))
+Fulldata <- Fulldata %>% mutate(Easy=ifelse(Easy==0.34,0.33,Easy))
+
 ##accuracy analysis according to designated probabilities##
 #add objective expected value (EV) for each stimulus and objective accuracy for each trial
 
 for (i in 1:length(Fulldata$block)){
-  Fulldata$EVStim1[i]=-stimuliFiles[[1]]$punishment[Fulldata$stim1[i]+1]
-  Fulldata$EVStim2[i]=-stimuliFiles[[1]]$punishment[Fulldata$stim2[i]+1]
+  index = which(subject_names == Fulldata$subject[i])
+  
+  if(subject_names[index]>1000){
+    Fulldata$EVStim1[i]=stimuliFiles[[index]]$reward[Fulldata$stim1[i]+1]
+    Fulldata$EVStim2[i]=stimuliFiles[[index]]$reward[Fulldata$stim2[i]+1]
+  }else{
+    Fulldata$EVStim1[i]=-stimuliFiles[[index]]$punishment[Fulldata$stim1[i]+1]
+    Fulldata$EVStim2[i]=-stimuliFiles[[index]]$punishment[Fulldata$stim2[i]+1]
+  }
   Fulldata$accuracy[i]=((Fulldata$EVStim1[i]>Fulldata$EVStim2[i])&&(Fulldata$choice[i]==0)||(Fulldata$EVStim1[i]<Fulldata$EVStim2[i])&&(Fulldata$choice[i]==1))
   if (Fulldata$EVStim1[i]==Fulldata$EVStim2[i])
     Fulldata$accuracy[i]=NA
 }
 
+# add group levele col
 Fulldata = Fulldata %>% 
-  mutate(group = ifelse(subject<200,1,2))
-
+  mutate(group = ifelse(subject>1000,"Money-reward",ifelse(subject<200,"Money-punisher","Noise-punisher")))
+Fulldata$group = as.factor(Fulldata$group)
 
 
 
@@ -93,7 +104,7 @@ smoothing_window <- 10
 #######################
 
 # TODO: create base figure
-IDs <- c(101,103,105,106,109,201,202,203,204,206)
+IDs <- unique(Fulldata$subject)
 
 for (n in IDs){
   
@@ -135,30 +146,29 @@ for (n in IDs){
   }
   
 }
-df = df %>% mutate(group = ifelse(subject<200,"Money","Noise"))
+
+df = df %>% mutate(group = ifelse(subject>1000,"Money-reward",ifelse(subject<200,"Money-punisher","Noise-punisher")))
 df$subject <- as.factor(df$subject)
 df$group <- as.factor(df$group)
-dfgroups = df %>% group_by(group,index) %>% summarise(group_curve = mean(learning_curve,na.rm = TRUE))
-meanGroups = df %>% group_by(group) %>% summarise(group_curve = mean(learning_curve,na.rm = TRUE))
-money_avg = meanGroups$group_curve[1]
-noise_avg = meanGroups$group_curve[2]
 
 fig1 <- ggplot(data = df, aes(x=index, y=learning_curve*100,fill = subject)) +
-  geom_line(aes(color = group),stat = "identity") +
-  stat_summary(aes(group = group,col = group,size = 0.01),fun=mean, geom="line")+
-  geom_hline(yintercept=noise_avg*100, linetype="dashed", color = "cyan4")+
-  geom_hline(yintercept=money_avg*100, linetype="dashed", color = "firebrick2")+
+  geom_line(data = subset(df,group!="Money-reward"),aes(color = group),stat = "identity",size = 1,alpha = 0.8) +
+  stat_summary(aes(group = group,col = group),fun=mean, geom="line",size = 4,alpha = 0.7)+
+  stat_summary(data = subset(df,group=="Money-reward"),
+               aes(group = group,col = group),
+               fun.data = mean_se, 
+               geom="errorbar",
+               size = 1,
+               alpha = 0.5
+               )+
   ylab("% correct choice")+
   xlab("window")+
-  ggtitle("Learning curves")
+  ggtitle("Learning curves")+
+  scale_color_manual(values = c("cyan4","tan3","firebrick"))+
+  theme(panel.grid = element_blank(),panel.background = element_rect(fill = "grey87"),
+        plot.title = element_text(size = 14, face = "bold.italic",hjust = 0.5),
+        axis.title.x = element_text(size = 11,face = "bold"),
+        axis.title.y = element_text(size = 11,face = "bold"),
+        axis.line.x = element_line(color = "black"),
+        axis.line.y = element_line(color = "black"))
 fig1
-
-fig2 = ggplot(data = dfgroups, aes(x=index, y=group_curve*100)) +
-  geom_line(aes(color = group,size = 0.01, alpha = group_curve)) +
-  ylab("% correct choice")+
-  xlab("window")+
-  ggtitle("Learning curves")
-fig2
-
-df <- Fulldata %>% filter(subject == 203)
-counts <- df %>% group_by(block) %>% summarise(counts = sum(feedback))
